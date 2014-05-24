@@ -12,7 +12,7 @@
         }
     ],
     "autoload": {
-        "psr-0": { "ElectricityMeter": "lib/" }
+        "psr-4": { "ElectricityMeter\\": "lib/" }
     },  
     "require": {
            "php": ">=5.3.0",
