@@ -20,6 +20,21 @@ final class EMeter
             die ('Драйвер "' . $driver . ': не найден');
         }
     }
+
+    public function readCurruntTariff()
+    {
+        return $this->driver->readCurruntTariff();
+    }
+
+    public function readPower()
+    {
+        return $this->driver->readPower();
+    }
+
+    public function readSerialNumberPart($part = 00)
+    {
+        return $this->driver->readSerialNumberPart($part);
+    }
 }
 
 

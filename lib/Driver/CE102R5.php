@@ -48,5 +48,179 @@ class CE102R5 extends EMDriver
         0x3d, 0x88, 0xe2, 0x57, 0x36, 0x83, 0xe9, 0x5c, 0x2b, 0x9e, 0xf4, 0x41, 0x20, 0x95, 0xff, 0x4a,
         0x11, 0xa4, 0xce, 0x7b, 0x1a, 0xaf, 0xc5, 0x70, 0x07, 0xb2, 0xd8, 0x6d, 0x0c, 0xb9, 0xd3, 0x66);
 
+    protected function calcCRC($data)
+    {
+        $crc8 = 0;
+        for ($i = 0; $i < strlen($data); $i++)
+        {
+            $c = unpack('C', $data[$i]);
+            $crc8 = $this->crc8tab[$crc8 ^ array_shift($c)];
+        }
+        return $crc8;
+    }
 
+    /**
+     * Разбирает ответ
+     *
+     * @param $answer
+     *
+     * @return string
+     */
+    private function parseAnswer($answer)
+    {
+        $start = strpos($answer, pack('C', 0xC0));
+        $end   = strpos($answer, pack('C', 0xC0), $start + 1);
+
+        $answer = substr($answer, $start + 1, $end - $start - 1);
+        $c = unpack('C', substr($answer, -1));
+        $crc = array_shift($c);
+        $answer = substr($answer, 0, -1);
+
+        if ($crc != $this->calcCRC($answer)) {
+            echo "Контрольная сумма не сошлась!\n";
+        }
+
+        $c = unpack('C', substr($answer, 0, 1));
+        $serv = $this->parseServ(array_shift($c));
+
+        if ($serv['answer'] != 0) {
+            die ('Не верный ответ');
+        }
+
+        $servclassAccess = $serv['classAccess'];
+        $messageLength = $serv['messageLength'];
+
+        $answer = substr($answer, 1);
+
+        extract(unpack('SaddrS/SaddrD/CintServ/Scmd', substr($answer, 0, 7)));
+        $answer = substr($answer, 7);
+        $intServ = $this->parseServ($intServ);
+
+        if ($addrS != self::addrS) {
+            die ('Адрес источника не совподяает');
+        }
+
+        if ($addrD != self::addrD) {
+            die ('Адрес назначения не совподяает');
+        }
+
+        return $answer;
+    }
+
+    private function parseServ($serv)
+    {
+        $result = array();
+        $result['answer'] = ($serv & 0x80);
+        $result['classAccess'] = ($serv & 0x70) >> 4;
+        $result['messageLength'] = ($serv & 0x0F);
+        return $result;
+    }
+
+    private function prepareCommand($cmd, $params = '', $length = 0)
+    {
+        $data = '';
+        $data .= pack('C', 0x48);
+        $data .= pack('v', self::addrD);
+        $data .= pack('v', self::addrS);
+        $data .= pack('CCCC', 0, 0, 0, 0);
+
+
+        $flag = 0x80 + 0x50 + $length;
+
+        $data .= pack('C', $flag);
+
+        $data .= pack('n', $cmd);
+
+        if ($length > 0) {
+            $data .= $params;
+        }
+        $data .= pack('C', $this->calcCRC($data));
+
+        return $data;
+    }
+
+    /**
+     * Проверяет связь с устройством
+     *
+     * @return mixed
+     */
+    public function ping()
+    {
+        // TODO: Implement ping() method.
+    }
+
+    /**
+     * Возвращает текущий тарифф
+     *
+     * @return mixed
+     */
+    public function readCurruntTariff()
+    {
+        $data = $this->prepareCommand(self::CMD_READ_CUR_TARIFF, pack('C', 0), 1);
+
+        $data = pack('C', 0xC0) . $data . pack('C', 0xC0);
+
+        $this->port->write($data);
+        sleep(1);
+        $result = $this->port->read();
+        $result = $this->parseAnswer($result);
+
+        $arr = unpack('C*', $result);
+        return $arr[1];
+    }
+
+    public function readPower()
+    {
+        $data = $this->prepareCommand(self::CMD_READ_POWER);
+
+        $data = pack('C', 0xC0) . $data . pack('C', 0xC0);
+        //var_dump(strtoupper(bin2hex($data)));
+        $this->port->write($data);
+        //sleep(1);
+        usleep(500000);
+        $result = $this->port->read();
+
+        $result = $this->parseAnswer($result);
+
+        $arr = unpack('C*', $result);
+        $r = ($arr[3]<<16) + ($arr[2]<<8) + $arr[1];
+        $power = $r / 100;
+
+        return $power;
+    }
+
+    public function readSerialNumberPart($part = 0)
+    {
+        $data = '';
+        $data .= pack('C', 0x48);
+        $data .= pack('v', self::addrD);
+        $data .= pack('v', self::addrS);
+        $data .= pack('cccc', 0, 0, 0, 0);
+
+
+        $flag = 0x80 + 0x50 + 0x01;
+
+        $data .= pack('C', $flag);
+
+        $data .= pack('n', self:: CMD_READ_SERIAL_NUMBER);
+
+        $data .= pack('C', $part);
+
+        $data .= pack('C', $this->calcCRC($data));
+
+        $data = pack('C', 0xC0) . $data . pack('C', 0xC0);
+        //var_dump(strtoupper(bin2hex($data)));
+        $this->port->write($data);
+        sleep(1);
+        $result = $this->port->read();
+
+        $result = $this->parseAnswer($result);
+
+        $arr = unpack('C*', $result);
+        $str = '';
+        for ($i = 8; $i>0; $i--) {
+            $str .= chr($arr[$i]);
+        }
+        return $str;
+    }
 } 
